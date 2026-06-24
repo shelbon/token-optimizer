@@ -109,8 +109,25 @@ def test_pi_session_parser_branch_usage_and_malformed(tmp_path, monkeypatch):
     importlib.reload(pi_session)
     parsed = pi_session.parse_session_jsonl(f)
     assert parsed["session_id"] == "abc"
-    assert parsed["total_input_tokens"] == 30
+    assert isinstance(pi_session.find_all_jsonl_files()[0][0], Path)
+    assert parsed["total_input_tokens"] == 35
     assert parsed["cache_read_tokens"] == 3
+    assert parsed["duration_minutes"] == 0.0
+    assert parsed["message_count"] == 3
+    assert parsed["cache_hit_rate"] == 3 / 35
+    assert parsed["model_usage"] == {"m": 17, "m2": 21}
+    assert parsed["model_usage_breakdown"]["m"] == {"fresh_input": 10, "cache_read": 3, "cache_create": 2, "output": 5}
+    assert parsed["skills_used"] == {}
+    assert parsed["subagents_used"] == {}
+    assert parsed["version"] is None
     assert parsed["tool_call_count"] == 1
     assert parsed["compaction_count"] == 1
     assert len(parsed["active_entries"]) == 2
+    quality = pi_session.parse_jsonl_for_quality(f)
+    assert quality["messages"]
+    assert quality["reads"] == []
+    assert quality["tool_results"] == []
+    assert quality["system_reminders"] == []
+    assert quality["agent_dispatches"] == []
+    assert quality["decisions"] == []
+    assert quality["tool_calls"] == 1
