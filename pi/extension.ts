@@ -57,10 +57,12 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
   pi.registerTool({
     ...readTool,
     async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) {
-      const abs = resolve(ctx?.cwd ?? process.cwd(), String(params.path));
+      const cwd = String(ctx?.cwd ?? process.cwd());
+      const cwdReadTool = createReadToolDefinition(cwd);
+      const abs = resolve(cwd, String(params.path));
       const pre = await bridge("read-before", { path: abs, cwd: ctx?.cwd, offset: params.offset ?? 0, limit: params.limit ?? 0 }, HOT).catch(() => undefined);
       if (pre?.action === "replace" && typeof pre.content === "string") return { content: [{ type: "text", text: pre.content }], details: { tokenOptimizer: pre } } as any;
-      const result = await readTool.execute(id, params, signal, onUpdate, ctx);
+      const result = await cwdReadTool.execute(id, params, signal, onUpdate, ctx);
       return prependWarning(result, typeof pre?.warning === "string" ? pre.warning : undefined);
     }
   });
@@ -69,7 +71,9 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
   pi.registerTool({
     ...bashTool,
     async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) {
-      const result: any = await bashTool.execute(id, params, signal, onUpdate, ctx);
+      const cwd = String(ctx?.cwd ?? process.cwd());
+      const cwdBashTool = createBashToolDefinition(cwd);
+      const result: any = await cwdBashTool.execute(id, params, signal, onUpdate, ctx);
       const rc = (result.details as any)?.exitCode ?? (result.details as any)?.code ?? 0;
       if (result.isError || rc !== 0) return result;
       const response = await bridge("bash-result", { command: params.command, text: textOf(result.content), returncode: rc, is_error: result.isError }, LIFE).catch(() => undefined);

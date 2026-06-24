@@ -146,10 +146,13 @@ def parse_session_jsonl(filepath):
     thinking_level = None
     for i, rec in enumerate(entries):
         typ = str(rec.get("type") or rec.get("entryType") or rec.get("kind") or "")
-        entry = rec.get("entry") if isinstance(rec.get("entry"), dict) else rec
+        if typ == "message" and isinstance(rec.get("message"), dict):
+            entry = rec["message"]
+        else:
+            entry = rec.get("entry") if isinstance(rec.get("entry"), dict) else rec
         node_id = rec.get("id") or entry.get("id")
         if isinstance(node_id, str):
-            nodes[node_id] = entry | {"_record": rec}
+            nodes[node_id] = rec | entry | {"_record": rec}
             if rec.get("active") or rec.get("isCurrent") or typ in {"active", "session_info"}:
                 active_id = node_id
         if typ in {"modelChange", "model_change"}:

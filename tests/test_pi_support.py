@@ -97,7 +97,7 @@ def test_pi_session_parser_branch_usage_and_malformed(tmp_path, monkeypatch):
     rows = [
         {"sessionId": "abc", "cwd": "/tmp/p"},
         {"id": "u1", "role": "user", "content": "hi"},
-        {"id": "a1", "parentId": "u1", "active": True, "role": "assistant", "model": "m", "usage": {"input": 10, "output": 5, "cacheRead": 3, "cacheWrite": 2, "cost": 0.01}, "content": [{"type": "toolCall", "id": "tc1", "name": "read", "input": {"path": "x"}}]},
+        {"id": "a1", "parentId": "u1", "active": True, "type": "message", "message": {"role": "assistant", "model": "m", "usage": {"input": 10, "output": 5, "cacheRead": 3, "cacheWrite": 2, "cost": 0.01}, "content": [{"type": "toolCall", "id": "tc1", "name": "read", "input": {"path": "x"}}]}},
         {"type": "toolResult", "toolCallId": "tc1", "content": "ok"},
         {"type": "modelChange", "model": "m2"},
         {"type": "compaction"},
