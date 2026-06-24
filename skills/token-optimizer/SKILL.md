@@ -1,14 +1,26 @@
 ---
 name: token-optimizer
-description: Find the ghost tokens. Audit Claude Code or Codex setup, see where context goes, fix it. Use when context feels tight.
+description: Find the ghost tokens. Audit Claude Code, Codex, or Pi setup, see where context goes, fix it. Use when context feels tight.
 effort: high
 ---
 
 # Token Optimizer
 
-Audits a Claude Code or Codex setup, identifies context window waste, implements fixes, and measures savings.
+Audits a Claude Code, Codex, or Pi setup, identifies context window waste, implements fixes, and measures savings.
 
 **Target**: 5-15% context recovery through config cleanup, up to 25%+ with autocompact management.
+
+---
+
+
+## Pi Runtime (Beta)
+
+If `TOKEN_OPTIMIZER_RUNTIME=pi` or `PI_CODING_AGENT_DIR` is present, **STOP before every Claude-specific phase** and read `references/pi-workflow.md`. Use Pi context snapshots and Pi session JSONL data only. Keep every Token Optimizer write under `<Pi agent dir>/token-optimizer/`, present Pi-specific recommendations, and never inspect or modify another runtime's configuration such as `~/.claude`.
+
+Quick check before any audit command:
+```bash
+python3 plugins/token-optimizer/skills/token-optimizer/scripts/pi_bridge.py doctor <<< '{}'
+```
 
 ---
 

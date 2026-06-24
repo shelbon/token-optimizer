@@ -1,4 +1,4 @@
-"""Runtime home detection shared by Claude Code, Codex, Hermes, OpenCode, and Copilot adapters.
+"""Runtime home detection shared by Claude Code, Codex, Hermes, OpenCode, Copilot, and Pi adapters.
 
 This module keeps runtime integration deliberately simple:
 
@@ -33,8 +33,9 @@ _RUNTIME_CODEX = "codex"
 _RUNTIME_HERMES = "hermes"
 _RUNTIME_OPENCODE = "opencode"
 _RUNTIME_COPILOT = "copilot"
+_RUNTIME_PI = "pi"
 _VALID_RUNTIMES = frozenset(
-    {_RUNTIME_CLAUDE, _RUNTIME_CODEX, _RUNTIME_HERMES, _RUNTIME_OPENCODE, _RUNTIME_COPILOT}
+    {_RUNTIME_CLAUDE, _RUNTIME_CODEX, _RUNTIME_HERMES, _RUNTIME_OPENCODE, _RUNTIME_COPILOT, _RUNTIME_PI}
 )
 _CLAUDE_PLUGIN_ENVS = ("CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA")
 # Claude Code's official config-dir override. When set, Claude stores
@@ -43,6 +44,7 @@ _CLAUDE_CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 _CODEX_HOME_ENV = "CODEX_HOME"
 _HERMES_HOME_ENV = "HERMES_HOME"
 _COPILOT_HOME_ENV = "COPILOT_HOME"
+_PI_HOME_ENV = "PI_CODING_AGENT_DIR"
 # OpenCode launch/config env vars. Their presence in this process's environment
 # is a strong signal we were spawned from within OpenCode. These are OpenCode's
 # own documented variables (config/data/bin/client), not anything we set.
@@ -158,6 +160,7 @@ def _ancestor_in_process_tree(basenames: frozenset) -> bool:
 
 _OPENCODE_BASENAMES = frozenset({"opencode", "opencode.exe"})
 _COPILOT_BASENAMES = frozenset({"copilot", "copilot.exe"})
+_PI_BASENAMES = frozenset({"pi", "pi.exe"})
 
 
 def _opencode_in_process_tree() -> bool:
@@ -168,6 +171,13 @@ def _opencode_in_process_tree() -> bool:
 def _opencode_signal() -> bool:
     """True when either an env signal or an opencode ancestor process is found."""
     return _opencode_env_signal() or _opencode_in_process_tree()
+
+
+def _pi_signal() -> bool:
+    """True when PI_CODING_AGENT_DIR is set or a conservative ``pi`` ancestor is found."""
+    if os.environ.get(_PI_HOME_ENV):
+        return True
+    return _ancestor_in_process_tree(_PI_BASENAMES)
 
 
 def _copilot_signal() -> bool:
@@ -220,6 +230,9 @@ def detect_runtime() -> str:
     if _copilot_signal():
         return _RUNTIME_COPILOT
 
+    if _pi_signal():
+        return _RUNTIME_PI
+
     return _RUNTIME_CLAUDE
 
 
@@ -263,6 +276,16 @@ def codex_home() -> Path:
 def hermes_home() -> Path:
     """Return Hermes's home directory, safely honoring HERMES_HOME when valid."""
     return _safe_home_from_env(_HERMES_HOME_ENV, Path.home() / ".hermes")
+
+
+def pi_home() -> Path:
+    """Return Pi coding agent directory (~/.pi/agent by default).
+
+    Honors PI_CODING_AGENT_DIR when it points at a safe, existing, non-symlink
+    directory under HOME. Token Optimizer Pi data lives under
+    <pi_home>/token-optimizer/ and never under ~/.claude.
+    """
+    return _safe_home_from_env(_PI_HOME_ENV, Path.home() / ".pi" / "agent")
 
 
 def copilot_home() -> Path:
@@ -325,12 +348,15 @@ def runtime_home() -> Path:
     if runtime == _RUNTIME_COPILOT:
         return copilot_home()
 
+    if runtime == _RUNTIME_PI:
+        return pi_home()
+
     return claude_home()
 
 
 def plugin_data_env_vars() -> tuple[str, ...]:
     """Return plugin-data env vars in runtime-specific priority order."""
-    if detect_runtime() in (_RUNTIME_CODEX, _RUNTIME_HERMES, _RUNTIME_OPENCODE, _RUNTIME_COPILOT):
+    if detect_runtime() in (_RUNTIME_CODEX, _RUNTIME_HERMES, _RUNTIME_OPENCODE, _RUNTIME_COPILOT, _RUNTIME_PI):
         return ("TOKEN_OPTIMIZER_PLUGIN_DATA",)
     return ("CLAUDE_PLUGIN_DATA", "TOKEN_OPTIMIZER_PLUGIN_DATA")
 
@@ -346,4 +372,6 @@ def runtime_name_for_humans() -> str:
         return "OpenCode"
     if runtime == _RUNTIME_COPILOT:
         return "GitHub Copilot"
+    if runtime == _RUNTIME_PI:
+        return "Pi"
     return "Claude Code"
