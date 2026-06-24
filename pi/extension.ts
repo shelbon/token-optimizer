@@ -1,4 +1,4 @@
-import type { ExtensionAPI, AgentToolResult } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadToolDefinition, createBashToolDefinition, getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { TextContent } from "@earendil-works/pi-ai";
 import { fileURLToPath } from "node:url";
@@ -40,11 +40,13 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
   process.env.TOKEN_OPTIMIZER_SNAPSHOT_DIR = join(agentDir, "token-optimizer", "data");
   mkdirSync(process.env.TOKEN_OPTIMIZER_SNAPSHOT_DIR, { recursive: true });
   let state: SessionState = { sessionId: "unknown", toolCalls: 0, compactions: 0, restored: false };
+  let toolOverridesRegistered = false;
 
   const bridge = (cmd: string, payload: Record<string, unknown>, timeoutMs = HOT) => callBridge(packageRoot, cmd, { ...payload, session_id: state.sessionId }, { agentDir, timeoutMs });
 
   pi.on("session_start", async (event: any, ctx: any) => {
     state = { sessionId: String(ctx?.sessionManager?.sessionId ?? event?.sessionId ?? Date.now()), toolCalls: 0, compactions: 0, restored: false };
+    registerBuiltinToolWrappers(pi, bridge, () => toolOverridesRegistered, (registered) => { toolOverridesRegistered = registered; });
     await bridge("session-start", { cwd: ctx?.cwd, reason: event?.reason }, LIFE).catch(() => undefined);
   });
   pi.on("model_select", (event: any) => { state.model = String(event?.model?.id ?? event?.model ?? state.model ?? "unknown"); });
@@ -57,34 +59,56 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
   pi.on("session_compact", async (event: any, ctx: any) => { state.compactions += 1; await bridge("compact-after", { cwd: ctx?.cwd, result: event?.result }, LIFE).catch(() => undefined); });
   pi.on("session_shutdown", async (event: any, ctx: any) => { await bridge("session-end", { cwd: ctx?.cwd, reason: event?.reason, tool_calls: state.toolCalls, compactions: state.compactions }, LIFE).catch(() => undefined); });
 
-  const readTool = createReadToolDefinition(process.cwd());
-  pi.registerTool({
-    ...readTool,
-    async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) {
-      const cwd = String(ctx?.cwd ?? process.cwd());
-      const cwdReadTool = createReadToolDefinition(cwd);
-      const abs = resolve(cwd, String(params.path));
-      const pre = await bridge("read-before", { path: abs, cwd: ctx?.cwd, offset: params.offset ?? 0, limit: params.limit ?? 0 }, HOT).catch(() => undefined);
-      if (pre?.action === "replace" && typeof pre.content === "string") return { content: [{ type: "text", text: pre.content }], details: { tokenOptimizer: pre } } as any;
-      const result = await cwdReadTool.execute(id, params, signal, onUpdate, ctx);
-      return prependWarning(result, typeof pre?.warning === "string" ? pre.warning : undefined);
-    }
-  });
+  function registerBuiltinToolWrappers(
+    piApi: ExtensionAPI,
+    bridgeCall: typeof bridge,
+    isRegistered: () => boolean,
+    setRegistered: (registered: boolean) => void,
+  ) {
+    if (isRegistered()) return;
+    setRegistered(true);
 
-  const bashTool = createBashToolDefinition(process.cwd());
-  pi.registerTool({
-    ...bashTool,
-    async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) {
-      const cwd = String(ctx?.cwd ?? process.cwd());
-      const cwdBashTool = createBashToolDefinition(cwd);
-      const result: any = await cwdBashTool.execute(id, params, signal, onUpdate, ctx);
-      const rc = (result.details as any)?.exitCode ?? (result.details as any)?.code ?? 0;
-      if (result.isError || rc !== 0) return result;
-      const response = await bridge("bash-result", { command: params.command, text: textOf(result.content), returncode: rc, is_error: result.isError }, LIFE).catch(() => undefined);
-      if (response?.action === "replace" && typeof response.content === "string") return replaceText(result, response.content);
-      return result;
+    const existingTools = safeGetAllTools(piApi);
+    const canWrapRead = isBuiltinOrMissing(existingTools, "read");
+    const canWrapBash = isBuiltinOrMissing(existingTools, "bash");
+
+    // Only install execution wrappers when Pi is still using its built-in local tools.
+    // If another extension already owns read/bash (SSH, containers, sandboxes, etc.),
+    // leave that implementation in place and rely on tool_result hooks below so Token
+    // Optimizer never reroutes execution back to the host by constructing fresh built-ins.
+    if (canWrapRead) {
+      const readTool = createReadToolDefinition(process.cwd());
+      piApi.registerTool({
+        ...readTool,
+        async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) {
+          const cwd = String(ctx?.cwd ?? process.cwd());
+          const cwdReadTool = createReadToolDefinition(cwd);
+          const abs = resolve(cwd, String(params.path));
+          const pre = await bridgeCall("read-before", { path: abs, cwd: ctx?.cwd, offset: params.offset ?? 0, limit: params.limit ?? 0 }, HOT).catch(() => undefined);
+          if (pre?.action === "replace" && typeof pre.content === "string") return { content: [{ type: "text", text: pre.content }], details: { tokenOptimizer: pre } } as any;
+          const result = await cwdReadTool.execute(id, params, signal, onUpdate, ctx);
+          return prependWarning(result, typeof pre?.warning === "string" ? pre.warning : undefined);
+        }
+      });
     }
-  });
+
+    if (canWrapBash) {
+      const bashTool = createBashToolDefinition(process.cwd());
+      piApi.registerTool({
+        ...bashTool,
+        async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) {
+          const cwd = String(ctx?.cwd ?? process.cwd());
+          const cwdBashTool = createBashToolDefinition(cwd);
+          const result: any = await cwdBashTool.execute(id, params, signal, onUpdate, ctx);
+          const rc = (result.details as any)?.exitCode ?? (result.details as any)?.code ?? 0;
+          if (result.isError || rc !== 0) return result;
+          const response = await bridgeCall("bash-result", { command: params.command, text: textOf(result.content), returncode: rc, is_error: result.isError }, LIFE).catch(() => undefined);
+          if (response?.action === "replace" && typeof response.content === "string") return replaceText(result, response.content);
+          return result;
+        }
+      });
+    }
+  }
 
   pi.on("tool_result", async (event: any) => {
     state.toolCalls += 1;
@@ -103,6 +127,20 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
   pi.registerCommand("token-status", { description: "Show Token Optimizer Pi status", handler: async (_args: string, ctx: any) => { const r = await bridge("status", { cwd: ctx?.cwd, model: state.model }, LIFE); showCommandOutput(ctx, formatStatus(r, state)); } });
   pi.registerCommand("token-doctor", { description: "Run Token Optimizer Pi diagnostics", handler: async (_args: string, ctx: any) => { const r = await bridge("doctor", { cwd: ctx?.cwd, overrides: { read: true, bash: true } }, LIFE); showCommandOutput(ctx, formatDoctor(r)); } });
   pi.registerCommand("token-dashboard", { description: "Show Token Optimizer dashboard information", handler: async (_args: string, ctx: any) => { const r = await bridge("dashboard", { cwd: ctx?.cwd }, LIFE); showCommandOutput(ctx, `Token Optimizer dashboard data directory: ${(r as any)?.data_dir ?? process.env.TOKEN_OPTIMIZER_SNAPSHOT_DIR}\nNo unmanaged server was started by the Pi extension.`); } });
+}
+
+function safeGetAllTools(pi: ExtensionAPI): any[] {
+  try {
+    const tools = pi.getAllTools?.();
+    return Array.isArray(tools) ? tools : [];
+  } catch {
+    return [];
+  }
+}
+function isBuiltinOrMissing(tools: any[], name: string): boolean {
+  const tool = tools.find((t) => t?.name === name);
+  const source = tool?.sourceInfo?.source;
+  return Boolean(tool) && source === "builtin";
 }
 
 function summarizePromptOptions(opts: any) {
