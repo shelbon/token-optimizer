@@ -69,6 +69,9 @@ def test_bridge_read_repeated_replaced_and_invalidated(tmp_path):
     out = json.loads(second.stdout)
     assert out["action"] == "replace"
     assert "expand" in out["content"]
+    archive = pi / "token-optimizer" / "data" / "tool-archive" / "s1" / f"{out['archive_key']}.json"
+    archived = json.loads(archive.read_text())
+    assert archived["response"] == f.read_text()
     inv = run_bridge("read-invalidate", {"path": str(f), "cwd": str(project), "session_id": "s1"}, env)
     assert json.loads(inv.stdout)["action"] == "invalidated"
     third = run_bridge("read-before", {"path": str(f), "cwd": str(project), "session_id": "s1"}, env)
@@ -84,7 +87,9 @@ def test_bridge_bash_compress_archives(tmp_path):
     assert out["action"] in {"allow", "replace"}
     if out["action"] == "replace":
         assert "expand" in out["content"]
-        assert list((pi / "token-optimizer" / "data" / "tool-archive").rglob("*.txt"))
+        archive = pi / "token-optimizer" / "data" / "tool-archive" / "s2" / f"{out['archive_key']}.json"
+        assert json.loads(archive.read_text())["response"] == text
+        assert (archive.parent / "manifest.jsonl").is_file()
     fail = run_bridge("bash-result", {"command": "bad", "text": text, "returncode": 1, "session_id": "s2"}, env)
     assert json.loads(fail.stdout)["action"] == "allow"
 

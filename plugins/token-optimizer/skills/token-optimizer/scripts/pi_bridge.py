@@ -72,15 +72,16 @@ def _save_cache(session_id: str, data: dict[str, Any]) -> None:
     tmp.write_text(json.dumps(data)); os.chmod(tmp, 0o600); tmp.replace(p)
 
 
-def _archive(prefix: str, session_id: str, text: str) -> str:
-    text = text[:MAX_TEXT]
-    d = _data_dir() / "tool-archive" / _sanitize_session_id(session_id or 'unknown')
-    d.mkdir(parents=True, exist_ok=True)
+def _archive(prefix: str, session_id: str, text: str) -> str | None:
+    """Archive Pi-replaced content in the shared expandable JSON format."""
+    if len(text) > MAX_TEXT:
+        text = text[:MAX_TEXT] + "\n[Token Optimizer: archived payload truncated at 5 MiB]"
     key = f"pi-{prefix}-{hashlib.sha256(text.encode('utf-8','replace')).hexdigest()[:16]}"
-    p = d / f"{key}.txt"
-    if not p.exists():
-        p.write_text(text, encoding='utf-8'); os.chmod(p, 0o600)
-    return key
+    try:
+        from archive_result import archive_original
+        return archive_original(text, session_id or "unknown", key, f"Pi {prefix.title()}")
+    except Exception:
+        return None
 
 
 def read_before(req: dict[str, Any]) -> dict[str, Any]:
@@ -96,7 +97,15 @@ def read_before(req: dict[str, Any]) -> dict[str, Any]:
     prev = cache.get(fp)
     cache[fp] = sig; _save_cache(sid, cache)
     if prev == sig and st.st_size >= 4096:
-        key = _archive('read', sid, f"Repeated read of {fp}\nsize={st.st_size}\nmtime={st.st_mtime_ns}\n")
+        if st.st_size > MAX_TEXT:
+            return {"ok": True, "action": "allow"}
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return {"ok": True, "action": "allow"}
+        key = _archive('read', sid, content)
+        if key is None:
+            return {"ok": True, "action": "allow"}
         return {"ok": True, "action": "replace", "replacement_type": "reason", "archive_key": key, "tokens_saved": max(0, st.st_size // 4 - 80), "content": f"[Token Optimizer] Repeated full-file read skipped for `{fp}` ({st.st_size:,} bytes). File is unchanged from the previous read in this session. Use a ranged read or ask to expand `{key}` if exact content is needed."}
     return {"ok": True, "action": "allow"}
 
@@ -119,6 +128,8 @@ def bash_result(req: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(compressed, str) or len(compressed) >= len(text) * 0.9:
         return {"ok": True, "action": "allow"}
     key = _archive('bash', str(req.get('session_id') or 'unknown'), text)
+    if key is None:
+        return {"ok": True, "action": "allow"}
     pointer = f"\n\n[Token Optimizer archived original output: expand {key}]"
     return {"ok": True, "action": "replace", "content": compressed + pointer, "archive_key": key, "tokens_saved": max(0, (len(text)-len(compressed))//4)}
 
