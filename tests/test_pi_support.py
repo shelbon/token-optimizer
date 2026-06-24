@@ -82,6 +82,19 @@ def test_bridge_read_repeated_replaced_and_invalidated(tmp_path):
 def test_bridge_bash_compress_archives(tmp_path):
     env, pi = env_for(tmp_path)
     text = "col1 col2\n" + "\n".join(f"row{i} value{i}" for i in range(1000))
+    sess = pi / "sessions"; sess.mkdir(parents=True)
+    (sess / "large.jsonl").write_text("\n".join([
+        json.dumps({"sessionId": "large"}),
+        json.dumps({"role": "assistant", "usage": {"input": 1}, "content": [{"type": "text", "text": "x" * 2_000_000}]}),
+        json.dumps({"type": "toolResult", "toolCallId": "tc-big", "content": "y" * 2_000_000}),
+    ]))
+    status = run_bridge("status", {"session_id": "s2"}, env)
+    status_out = json.loads(status.stdout)
+    assert status_out["action"] == "status"
+    assert "turns" not in status_out["session"]
+    assert "tool_results" not in status_out["session"]
+    assert len(status.stdout) < 1_000_000
+
     p = run_bridge("bash-result", {"command": "printf rows", "text": text, "returncode": 0, "session_id": "s2"}, env)
     out = json.loads(p.stdout)
     assert out["action"] in {"allow", "replace"}
@@ -136,3 +149,25 @@ def test_pi_session_parser_branch_usage_and_malformed(tmp_path, monkeypatch):
     assert quality["agent_dispatches"] == []
     assert quality["decisions"] == []
     assert quality["tool_calls"] == 1
+
+
+def test_pi_quality_preserves_failures_and_context_entries(tmp_path, monkeypatch):
+    env, pi = env_for(tmp_path)
+    monkeypatch.setenv("HOME", env["HOME"]); monkeypatch.setenv("TOKEN_OPTIMIZER_RUNTIME", "pi"); monkeypatch.setenv("PI_CODING_AGENT_DIR", str(pi)); monkeypatch.syspath_prepend(str(SCRIPTS))
+    sess = pi / "sessions"; sess.mkdir(parents=True)
+    f = sess / "quality.jsonl"
+    rows = [
+        {"sessionId": "quality"},
+        {"type": "custom_message", "content": "persisted custom diagnostic context"},
+        {"type": "branch_summary", "summary": "branch summary context"},
+        {"role": "assistant", "content": [{"type": "toolCall", "id": "tc1", "name": "bash", "input": {}}]},
+        {"type": "toolResult", "toolCallId": "tc1", "isError": True, "content": "short failure"},
+    ]
+    f.write_text("\n".join(json.dumps(r) for r in rows))
+    import pi_session
+    importlib.reload(pi_session)
+    quality = pi_session.parse_jsonl_for_quality(f)
+    assert quality["messages"][0][1] == "system"
+    assert quality["messages"][1][1] == "system"
+    assert quality["tool_results"] == [(4, "tc1", len("short failure"), True)]
+    assert quality["tool_result_meta"][0]["is_failure"] is True

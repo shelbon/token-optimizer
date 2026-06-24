@@ -28,6 +28,10 @@ function prependWarning(result: any, warning?: string): any {
 function sessionId(ctx: any, state: SessionState): string {
   return String(ctx?.sessionManager?.sessionId ?? ctx?.session?.id ?? state.sessionId ?? "unknown");
 }
+function showCommandOutput(ctx: any, message: string, type: "info" | "warning" | "error" = "info") {
+  if (ctx?.ui?.notify) ctx.ui.notify(message, type);
+  else process.stdout.write(`${message}\n`);
+}
 
 export default function tokenOptimizerPi(pi: ExtensionAPI) {
   const agentDir = getAgentDir();
@@ -96,9 +100,9 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("token-optimizer", { description: "Start the Pi Token Optimizer skill", handler: async (args: string) => { pi.sendUserMessage(`/skill:token-optimizer ${args ?? ""}`.trim()); } });
-  pi.registerCommand("token-status", { description: "Show Token Optimizer Pi status", handler: async (_args: string, ctx: any) => { const r = await bridge("status", { cwd: ctx?.cwd, model: state.model }, LIFE); pi.sendMessage({ customType: "token-optimizer", content: formatStatus(r, state), display: true }); } });
-  pi.registerCommand("token-doctor", { description: "Run Token Optimizer Pi diagnostics", handler: async (_args: string, ctx: any) => { const r = await bridge("doctor", { cwd: ctx?.cwd, overrides: { read: true, bash: true } }, LIFE); pi.sendMessage({ customType: "token-optimizer", content: formatDoctor(r), display: true }); } });
-  pi.registerCommand("token-dashboard", { description: "Show Token Optimizer dashboard information", handler: async (_args: string, ctx: any) => { const r = await bridge("dashboard", { cwd: ctx?.cwd }, LIFE); pi.sendMessage({ customType: "token-optimizer", content: `Token Optimizer dashboard data directory: ${(r as any)?.data_dir ?? process.env.TOKEN_OPTIMIZER_SNAPSHOT_DIR}\nNo unmanaged server was started by the Pi extension.`, display: true }); } });
+  pi.registerCommand("token-status", { description: "Show Token Optimizer Pi status", handler: async (_args: string, ctx: any) => { const r = await bridge("status", { cwd: ctx?.cwd, model: state.model }, LIFE); showCommandOutput(ctx, formatStatus(r, state)); } });
+  pi.registerCommand("token-doctor", { description: "Run Token Optimizer Pi diagnostics", handler: async (_args: string, ctx: any) => { const r = await bridge("doctor", { cwd: ctx?.cwd, overrides: { read: true, bash: true } }, LIFE); showCommandOutput(ctx, formatDoctor(r)); } });
+  pi.registerCommand("token-dashboard", { description: "Show Token Optimizer dashboard information", handler: async (_args: string, ctx: any) => { const r = await bridge("dashboard", { cwd: ctx?.cwd }, LIFE); showCommandOutput(ctx, `Token Optimizer dashboard data directory: ${(r as any)?.data_dir ?? process.env.TOKEN_OPTIMIZER_SNAPSHOT_DIR}\nNo unmanaged server was started by the Pi extension.`); } });
 }
 
 function summarizePromptOptions(opts: any) {

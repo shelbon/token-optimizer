@@ -257,6 +257,36 @@ def _tool_result_text(value: Any) -> str:
     return str(value or "")
 
 
+def _entry_is_failure(rec: dict[str, Any], entry: dict[str, Any]) -> bool:
+    """Best-effort Pi tool-result failure flag propagation."""
+    for source in (entry, rec):
+        if bool(source.get("isError") or source.get("is_error") or source.get("error")):
+            return True
+        details = source.get("details")
+        if isinstance(details, dict) and bool(details.get("isError") or details.get("is_error") or details.get("error")):
+            return True
+        status = str(source.get("status") or source.get("outcome") or "").lower()
+        if status in {"error", "failed", "failure"}:
+            return True
+    return False
+
+
+def _context_entry_text(rec: dict[str, Any], entry: dict[str, Any], typ: str, role: str) -> str:
+    """Extract context-bearing text from Pi custom/context summary entries."""
+    if role not in {"custom_message", "customMessage", "branch_summary", "branchSummary"} and typ not in {"custom_message", "customMessage", "branch_summary", "branchSummary"}:
+        return ""
+    return _content_text(
+        entry.get("content")
+        or entry.get("summary")
+        or entry.get("text")
+        or entry.get("message")
+        or rec.get("content")
+        or rec.get("summary")
+        or rec.get("text")
+        or rec.get("message")
+    )
+
+
 def parse_jsonl_for_quality(filepath):
     path = Path(filepath)
     parsed = parse_session_jsonl(path)
@@ -303,6 +333,10 @@ def parse_jsonl_for_quality(filepath):
                 import hashlib
                 system_reminders.append((idx, hashlib.sha256(msg_content.encode()).hexdigest()[:16], len(msg_content)))
 
+        context_text = _context_entry_text(rec, entry, typ, str(role))
+        if context_text:
+            messages.append((idx, "system", len(context_text), len(context_text.split()) > 10))
+
         if role == "user":
             text = _content_text(entry.get("content") or rec.get("content"))
             messages.append((idx, "user", len(text), len(text.split()) > 10))
@@ -345,8 +379,9 @@ def parse_jsonl_for_quality(filepath):
         if role in {"toolResult", "tool_result"} or typ in {"toolResult", "tool_result"}:
             tid = str(rec.get("toolCallId") or entry.get("toolCallId") or entry.get("id") or "")
             text = _tool_result_text(entry)
-            tool_results.append((idx, tid, len(text), False))
-            tool_result_meta.append({"index": idx, "tool_id": tid, "tool_name": tool_name_by_id.get(tid, ""), "size": len(text), "is_failure": False})
+            is_failure = _entry_is_failure(rec, entry)
+            tool_results.append((idx, tid, len(text), is_failure))
+            tool_result_meta.append({"index": idx, "tool_id": tid, "tool_name": tool_name_by_id.get(tid, ""), "size": len(text), "is_failure": is_failure})
             if agent_dispatches and agent_dispatches[-1][2] == 0:
                 last = agent_dispatches[-1]
                 agent_dispatches[-1] = (last[0], last[1], len(text))

@@ -134,11 +134,29 @@ def bash_result(req: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "action": "replace", "content": compressed + pointer, "archive_key": key, "tokens_saved": max(0, (len(text)-len(compressed))//4)}
 
 
+def _session_summary(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Return only fields needed by Pi command formatters.
+
+    Full Pi session parses include turn text, active branch entries, and tool
+    result payloads, which can easily exceed the TypeScript bridge stdout cap.
+    """
+    keys = (
+        "session_id", "cwd", "model", "thinking_level", "tool_call_count",
+        "compaction_count", "compactions", "duration_minutes", "message_count",
+        "api_calls", "total_input_tokens", "total_output_tokens",
+        "total_cache_read", "total_cache_create", "cache_read_tokens",
+        "cache_creation_tokens", "cache_hit_rate", "model_usage",
+        "model_usage_breakdown", "skills_used", "subagents_used", "version",
+        "topic", "first_ts", "total_cost_usd", "estimated", "filepath",
+    )
+    return {key: parsed.get(key) for key in keys if key in parsed}
+
+
 def status(req: dict[str, Any]) -> dict[str, Any]:
     import pi_session
     fp = pi_session.find_current_session_jsonl()
     parsed = pi_session.parse_session_jsonl(fp) if fp else {}
-    return {"ok": True, "action": "status", "runtime": detect_runtime(), "session": parsed, "data_dir": str(_data_dir())}
+    return {"ok": True, "action": "status", "runtime": detect_runtime(), "session": _session_summary(parsed), "data_dir": str(_data_dir())}
 
 
 def doctor(req: dict[str, Any]) -> dict[str, Any]:

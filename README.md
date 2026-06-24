@@ -73,11 +73,11 @@ Then in Claude Code: `/token-optimizer`
 
 **Pi (beta):**
 ```bash
-pi install https://github.com/shelbon/token-optimizer
+pi install https://github.com/alexgreensh/token-optimizer
 # local development from this checkout:
 pi -e .
 # remove:
-pi remove https://github.com/shelbon/token-optimizer
+pi remove https://github.com/alexgreensh/token-optimizer
 ```
 See [`docs/pi.md`](docs/pi.md).
 
