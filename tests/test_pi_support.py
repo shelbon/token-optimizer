@@ -123,11 +123,19 @@ def test_pi_session_parser_branch_usage_and_malformed(tmp_path, monkeypatch):
         "{bad",
     ]
     f.write_text("\n".join(json.dumps(r) if isinstance(r, dict) else r for r in rows))
+    old = sess / "old.jsonl"
+    old.write_text(json.dumps({"sessionId": "old"}))
+    old_mtime = f.stat().st_mtime - (60 * 86400)
+    os.utime(old, (old_mtime, old_mtime))
     import pi_session
     importlib.reload(pi_session)
     parsed = pi_session.parse_session_jsonl(f)
     assert parsed["session_id"] == "abc"
-    assert isinstance(pi_session.find_all_jsonl_files()[0][0], Path)
+    recent_files = pi_session.find_all_jsonl_files(days=30)
+    assert isinstance(recent_files[0][0], Path)
+    assert f in [path for path, _mtime, _name in recent_files]
+    assert old not in [path for path, _mtime, _name in recent_files]
+    assert old in [path for path, _mtime, _name in pi_session.find_all_jsonl_files(days=3650)]
     assert parsed["total_input_tokens"] == 35
     assert parsed["cache_read_tokens"] == 3
     assert parsed["duration_minutes"] == 0.0

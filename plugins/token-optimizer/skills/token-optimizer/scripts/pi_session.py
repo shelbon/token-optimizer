@@ -74,11 +74,14 @@ def find_all_jsonl_files(days: int = 30):
     root = _sessions_dir()
     if not root.is_dir():
         return []
+    cutoff = datetime.now(timezone.utc).timestamp() - (days * 86400)
     out = []
     for p in root.rglob("*.jsonl"):
         try:
             st = p.stat()
         except OSError:
+            continue
+        if st.st_mtime < cutoff:
             continue
         out.append((p, st.st_mtime, p.name))
     out.sort(key=lambda x: x[1], reverse=True)

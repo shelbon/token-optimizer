@@ -138,9 +138,11 @@ function safeGetAllTools(pi: ExtensionAPI): any[] {
   }
 }
 function isBuiltinOrMissing(tools: any[], name: string): boolean {
-  const tool = tools.find((t) => t?.name === name);
-  const source = tool?.sourceInfo?.source;
-  return Boolean(tool) && source === "builtin";
+  return !tools.some((t) => {
+    if (t?.name !== name) return false;
+    const source = t?.sourceInfo?.source;
+    return source !== undefined && source !== null && source !== "builtin";
+  });
 }
 
 function summarizePromptOptions(opts: any) {
