@@ -117,6 +117,13 @@ def _content_text(content: Any) -> str:
     return ""
 
 
+def _usage_cost(u: dict[str, Any]) -> float:
+    cost = u.get("cost")
+    if isinstance(cost, dict):
+        return _safe_float(cost.get("total"))
+    return _safe_float(cost or u.get("totalCost") or u.get("costUsd"))
+
+
 def _usage(d: dict[str, Any]) -> dict[str, int | float]:
     u = d.get("usage") if isinstance(d.get("usage"), dict) else d
     return {
@@ -124,7 +131,7 @@ def _usage(d: dict[str, Any]) -> dict[str, int | float]:
         "output_tokens": _safe_int(u.get("output") or u.get("outputTokens") or u.get("completionTokens")),
         "cache_read_tokens": _safe_int(u.get("cacheRead") or u.get("cacheReadTokens")),
         "cache_creation_tokens": _safe_int(u.get("cacheWrite") or u.get("cacheWriteTokens")),
-        "cost_usd": _safe_float(u.get("cost") or u.get("totalCost") or u.get("costUsd")),
+        "cost_usd": _usage_cost(u),
     }
 
 
