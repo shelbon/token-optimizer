@@ -63,7 +63,6 @@ git -C "$REPO_ROOT" ls-files \
     .codex-plugin/ \
     .codex/ \
     package.json \
-    pi/ \
     | sort | while read -r rel; do
     f="${REPO_ROOT}/${rel}"
     [ -f "$f" ] || continue
