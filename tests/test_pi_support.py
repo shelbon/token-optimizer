@@ -115,7 +115,7 @@ def test_pi_session_parser_branch_usage_and_malformed(tmp_path, monkeypatch):
     rows = [
         {"sessionId": "abc", "cwd": "/tmp/p"},
         {"id": "u1", "role": "user", "content": "hi"},
-        {"id": "a1", "parentId": "u1", "active": True, "type": "message", "message": {"role": "assistant", "model": "m", "usage": {"input": 10, "output": 5, "cacheRead": 3, "cacheWrite": 2, "cost": 0.01}, "content": [{"type": "toolCall", "id": "tc1", "name": "read", "input": {"path": "x"}}]}},
+        {"id": "a1", "parentId": "u1", "active": True, "type": "message", "message": {"role": "assistant", "model": "m", "usage": {"input": 10, "output": 5, "cacheRead": 3, "cacheWrite": 2, "cost": {"input": 0.001, "output": 0.002, "cacheRead": 0.003, "cacheWrite": 0.004, "total": 0.01}}, "content": [{"type": "toolCall", "id": "tc1", "name": "read", "input": {"path": "x"}}]}},
         {"type": "toolResult", "toolCallId": "tc1", "content": "ok"},
         {"type": "modelChange", "model": "m2"},
         {"type": "compaction"},
@@ -140,6 +140,16 @@ def test_pi_session_parser_branch_usage_and_malformed(tmp_path, monkeypatch):
     assert parsed["version"] is None
     assert parsed["tool_call_count"] == 1
     assert parsed["compaction_count"] == 1
+    turns = pi_session.parse_session_turns(f)
+    assert len(turns) == 2
+    assert all(turn["role"] == "assistant" for turn in turns)
+    assert turns[0]["turn_index"] == 0
+    assert turns[0]["input_tokens"] == 15
+    assert turns[0]["cache_read"] == 3
+    assert turns[0]["cache_creation"] == 2
+    assert turns[0]["tools_used"] == ["read"]
+    assert turns[0]["cost_usd"] == 0.01
+    assert parsed["total_cost_usd"] == 0.01
     assert len(parsed["active_entries"]) == 2
     quality = pi_session.parse_jsonl_for_quality(f)
     assert quality["messages"]

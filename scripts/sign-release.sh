@@ -62,6 +62,7 @@ git -C "$REPO_ROOT" ls-files \
     .claude-plugin/ \
     .codex-plugin/ \
     .codex/ \
+    package.json \
     | sort | while read -r rel; do
     f="${REPO_ROOT}/${rel}"
     [ -f "$f" ] || continue

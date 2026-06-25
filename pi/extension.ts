@@ -110,11 +110,11 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
     }
   }
 
-  pi.on("tool_result", async (event: any) => {
+  pi.on("tool_result", async (event: any, ctx: any) => {
     state.toolCalls += 1;
     if (!event.isError && ["edit", "write"].includes(String(event.toolName))) {
       const p = (event.input as any)?.path ?? (event.input as any)?.file_path;
-      if (typeof p === "string") await bridge("read-invalidate", { path: p }, HOT).catch(() => undefined);
+      if (typeof p === "string") await bridge("read-invalidate", { path: p, cwd: ctx?.cwd }, HOT).catch(() => undefined);
     }
     if (["read", "bash"].includes(String(event.toolName))) return undefined;
     if (event.isError) return undefined;
