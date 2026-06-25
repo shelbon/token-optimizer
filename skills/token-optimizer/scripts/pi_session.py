@@ -192,13 +192,32 @@ def parse_session_jsonl(filepath):
                 bd["cache_create"] += int(u["cache_creation_tokens"])
                 bd["output"] += int(u["output_tokens"])
             text = _content_text(entry.get("content") or rec.get("content"))
-            turns.append({"role": "assistant", "text": text, "model": turn_model, **_usage(entry)})
+            usage = _usage(entry)
+            turn = {
+                "turn_index": len([t for t in turns if t.get("role") == "assistant"]),
+                "role": "assistant",
+                "input_tokens": int(usage["input_tokens"] + usage["cache_read_tokens"] + usage["cache_creation_tokens"]),
+                "output_tokens": int(usage["output_tokens"]),
+                "cache_read": int(usage["cache_read_tokens"]),
+                "cache_creation": int(usage["cache_creation_tokens"]),
+                "cache_creation_1h": 0,
+                "cache_creation_5m": int(usage["cache_creation_tokens"]),
+                "model": turn_model,
+                "timestamp": rec.get("timestamp") or rec.get("createdAt") or rec.get("time"),
+                "gap_since_prev_seconds": None,
+                "tools_used": [],
+                "cost_usd": float(usage["cost_usd"]),
+                "estimated": False,
+                "text": text,
+            }
+            turns.append(turn)
             for block in (entry.get("content") if isinstance(entry.get("content"), list) else []):
                 if isinstance(block, dict) and (block.get("type") in {"toolCall", "tool-call", "tool_use"} or block.get("toolCallId")):
                     tcid = str(block.get("id") or block.get("toolCallId") or "")
                     name = str(block.get("name") or block.get("toolName") or "unknown")
                     inp = block.get("input") if isinstance(block.get("input"), dict) else {}
                     tool_calls.append({"id": tcid, "name": name, "input": inp})
+                    turn["tools_used"].append(name)
                     tool_call_counts[name] = tool_call_counts.get(name, 0) + 1
                     if name == "Skill":
                         skill = str(inp.get("skill") or "unknown")
@@ -244,7 +263,7 @@ def parse_session_jsonl(filepath):
 
 
 def parse_session_turns(filepath):
-    return parse_session_jsonl(filepath).get("turns", [])
+    return [turn for turn in parse_session_jsonl(filepath).get("turns", []) if turn.get("role") == "assistant"]
 
 
 def _tool_result_text(value: Any) -> str:

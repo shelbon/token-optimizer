@@ -140,6 +140,15 @@ def test_pi_session_parser_branch_usage_and_malformed(tmp_path, monkeypatch):
     assert parsed["version"] is None
     assert parsed["tool_call_count"] == 1
     assert parsed["compaction_count"] == 1
+    turns = pi_session.parse_session_turns(f)
+    assert len(turns) == 2
+    assert all(turn["role"] == "assistant" for turn in turns)
+    assert turns[0]["turn_index"] == 0
+    assert turns[0]["input_tokens"] == 15
+    assert turns[0]["cache_read"] == 3
+    assert turns[0]["cache_creation"] == 2
+    assert turns[0]["tools_used"] == ["read"]
+    assert turns[0]["cost_usd"] == 0.01
     assert len(parsed["active_entries"]) == 2
     quality = pi_session.parse_jsonl_for_quality(f)
     assert quality["messages"]
