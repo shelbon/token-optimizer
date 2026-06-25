@@ -1,0 +1,41 @@
+---
+title: Pi (beta)
+description: Native Pi coding-agent support for Token Optimizer.
+---
+
+Token Optimizer supports Pi as a beta native package. The integration uses Pi's TypeScript extension API for lifecycle hooks, slash commands, and read/bash tool overrides, with a bounded Python JSON bridge for compression, archiving, status, and session parsing.
+
+## Install
+
+```bash
+pi install https://github.com/shelbon/token-optimizer
+```
+
+## Local development
+
+```bash
+git clone https://github.com/shelbon/token-optimizer.git
+cd token-optimizer
+pi -e .
+```
+
+## Remove
+
+```bash
+pi remove https://github.com/shelbon/token-optimizer
+```
+
+## Commands
+
+- `/token-optimizer`
+- `/token-status`
+- `/token-doctor`
+- `/token-dashboard`
+
+## Data
+
+All Pi data is written beneath `<Pi agent dir>/token-optimizer/`. Pi mode must not inspect or mutate `~/.claude`.
+
+## Limitations
+
+Pi support is beta. Token Optimizer keeps Pi's default compactor and records checkpoints before/after compaction; dynamic compaction-instruction enrichment is partial.

@@ -47,7 +47,7 @@ Token Optimizer cuts the tokens your AI coding assistant wastes, keeps your work
 
 **Why not just use Headroom or RTK?** They compress command output, which covers 15-25% of your context. Token Optimizer covers that plus the other 75%: bloated configs, unused skills, stale memory, compaction loss, model misrouting, behavioral waste. Every saving is cache-safe and measured. The dashboard updates after every session, automatically.
 
-Works on **Claude Code** (CLI and VS Code), **OpenCode**, **OpenClaw**, **Codex**, **Hermes**, and **GitHub Copilot** (beta). Windsurf and Cursor are next on the roadmap.
+Works on **Claude Code** (CLI and VS Code), **OpenCode**, **OpenClaw**, **Codex**, **Hermes**, **GitHub Copilot** (beta), and **Pi** (beta). Windsurf and Cursor are next on the roadmap.
 
 <p align="center">
   <img src="skills/token-optimizer/assets/hero-terminal.svg" alt="Token Optimizer Quick Scan" width="800">
@@ -70,6 +70,16 @@ Then in Claude Code: `/token-optimizer`
 
 <details>
 <summary><b>Other platforms and install methods</b></summary>
+
+**Pi (beta):**
+```bash
+pi install https://github.com/alexgreensh/token-optimizer
+# local development from this checkout:
+pi -e .
+# remove:
+pi remove https://github.com/alexgreensh/token-optimizer
+```
+See [`docs/pi.md`](docs/pi.md).
 
 **Codex:**
 ```bash

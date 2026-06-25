@@ -1,0 +1,14 @@
+{
+  "name": "token-optimizer",
+  "private": true,
+  "version": "0.0.0-pi-beta",
+  "keywords": ["pi-package", "token-optimizer", "context-window"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*"
+  },
+  "pi": {
+    "extensions": ["./pi/extension.ts"],
+    "skills": ["./plugins/token-optimizer/skills/token-optimizer"]
+  }
+}

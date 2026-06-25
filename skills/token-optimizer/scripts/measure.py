@@ -100,6 +100,7 @@ import codex_session
 import codex_state
 import copilot_session
 import hermes_session
+import pi_session
 
 try:
     import fcntl
@@ -149,7 +150,7 @@ _OPENCODE_CLAUDE_TARGET_CMDS = _CLAUDE_TARGET_CMDS
 # from a Copilot session). The Claude-targeting commands above are blocked for
 # all of them; runtime-data commands are unaffected because RUNTIME_DIR
 # resolves to the foreign runtime's own home.
-_FOREIGN_RUNTIMES = frozenset({"opencode", "copilot"})
+_FOREIGN_RUNTIMES = frozenset({"opencode", "copilot", "pi"})
 
 
 def _is_foreign_runtime() -> bool:
@@ -182,6 +183,7 @@ def _foreign_audit_notice() -> None:
     notices = {
         "opencode": _opencode_audit_notice,
         "copilot": _copilot_audit_notice,
+        "pi": _pi_audit_notice,
     }
     handler = notices.get(detect_runtime())
     if handler is not None:
@@ -191,6 +193,16 @@ def _foreign_audit_notice() -> None:
         print("Claude-targeting commands are disabled here; they scan/modify ~/.claude.")
         print("Set TOKEN_OPTIMIZER_RUNTIME to force a specific runtime.")
 
+
+
+def _pi_audit_notice() -> None:
+    """Explain why Claude-specific audit phases do not run under Pi."""
+    print("Token Optimizer — Pi runtime detected.")
+    print()
+    print("Claude-targeting commands are disabled here; they scan/modify ~/.claude.")
+    print("Use Pi-native commands instead: /token-doctor, /token-status, /token-dashboard,")
+    print("or run the Pi skill workflow from references/pi-workflow.md.")
+    print("All Pi data stays under <Pi agent dir>/token-optimizer/.")
 
 def _opencode_audit_notice() -> None:
     """Explain why the Claude audit does not run under OpenCode, and where to go.
@@ -271,6 +283,11 @@ def _use_hermes_session_adapter():
 def _use_copilot_session_adapter():
     """True when sessions should be loaded from the Copilot adapters."""
     return detect_runtime() == "copilot"
+
+
+def _use_pi_session_adapter(filepath=None):
+    """True when session JSONL should be parsed with the Pi adapter."""
+    return detect_runtime() == "pi" or (filepath is not None and pi_session.is_pi_session_path(filepath))
 
 # Tokens per skill frontmatter (loaded at startup)
 TOKENS_PER_SKILL_APPROX = 100
@@ -7179,6 +7196,8 @@ def generate_coach_block(components=None, trends=None):
 
 def _find_all_jsonl_files(days=30):
     """Find all JSONL session files across all projects within the given day window."""
+    if _use_pi_session_adapter():
+        return pi_session.find_all_jsonl_files(days)
     if _use_codex_session_adapter():
         return codex_session.find_all_jsonl_files(days)
 
@@ -7484,6 +7503,8 @@ def _parse_session_jsonl(filepath):
     Returns a dict with extracted session metrics, or None if the file
     is empty or unparseable.
     """
+    if _use_pi_session_adapter(filepath):
+        return pi_session.parse_session_jsonl(filepath)
     if _use_codex_session_adapter(filepath):
         return codex_session.parse_session_jsonl(filepath)
 
@@ -7740,6 +7761,8 @@ def parse_session_turns(filepath):
 
     Returns empty list if file is empty/unparseable.
     """
+    if _use_pi_session_adapter(filepath):
+        return pi_session.parse_session_turns(filepath)
     if _use_codex_session_adapter(filepath):
         turns = codex_session.parse_session_turns(filepath)
         for turn in turns:
@@ -20648,6 +20671,8 @@ def _parse_jsonl_for_quality(filepath):
     system reminders, messages, and compaction markers. Returns None if
     the file is empty or unparseable.
     """
+    if _use_pi_session_adapter(filepath):
+        return pi_session.parse_jsonl_for_quality(filepath)
     if _use_codex_session_adapter(filepath):
         return codex_session.parse_jsonl_for_quality(filepath)
 
@@ -21358,6 +21383,8 @@ def _find_current_session_jsonl():
     For non-hook contexts (manual CLI), results are the same since the most
     recently modified JSONL is almost always the currently active session.
     """
+    if _use_pi_session_adapter():
+        return pi_session.find_current_session_jsonl()
     if _use_codex_session_adapter():
         return codex_session.find_current_session_jsonl()
 
@@ -21379,6 +21406,8 @@ def _find_session_jsonl_by_id(session_id):
     safe_id = sanitize_session_id(session_id)
     if safe_id == "unknown":
         return None
+    if _use_pi_session_adapter():
+        return pi_session.find_session_jsonl_by_id(safe_id)
     if _use_codex_session_adapter():
         return codex_session.find_session_jsonl_by_id(safe_id)
 
