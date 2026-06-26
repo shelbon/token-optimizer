@@ -8045,6 +8045,11 @@ CREATE TABLE IF NOT EXISTS session_log (
     quality_grade TEXT,
     stale_waste_tokens INTEGER DEFAULT 0,
     session_uuid TEXT,
+    cost_usd REAL,
+    cost_source TEXT,
+    credits REAL,
+    platform TEXT,
+    incomplete INTEGER DEFAULT 0,
     is_sidechain INTEGER DEFAULT 0
 );
 
@@ -15859,8 +15864,8 @@ def collect_sessions(days=90, quiet=False, rebuild=False):
                 avg_call_gap_seconds, max_call_gap_seconds, p95_call_gap_seconds,
                 skills_json, subagents_json, tool_calls_json, model_usage_json,
                 all_model_usage_json, model_usage_breakdown_json, version, slug, topic, collected_at,
-                quality_score, quality_grade, stale_waste_tokens, is_sidechain)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                quality_score, quality_grade, stale_waste_tokens, cost_usd, cost_source, is_sidechain)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 str(filepath), date, project_name,
                 parsed["duration_minutes"],
@@ -15888,6 +15893,8 @@ def collect_sessions(days=90, quiet=False, rebuild=False):
                 sq["score"],
                 sq["grade"],
                 int(stale_waste or 0),
+                float(parsed.get("total_cost_usd", 0.0) or 0.0) or None,
+                "pi_session" if float(parsed.get("total_cost_usd", 0.0) or 0.0) > 0 else None,
                 1 if parsed.get("is_sidechain") else 0,
             ),
         )
@@ -16110,7 +16117,7 @@ def _query_trends_db(conn, days):
                   avg_call_gap_seconds, max_call_gap_seconds, p95_call_gap_seconds, skills_json,
                   subagents_json, model_usage_json, slug, topic, project,
                   model_usage_breakdown_json,
-                  quality_score, quality_grade
+                  quality_score, quality_grade, cost_usd, cost_source
            FROM session_log WHERE date >= ? ORDER BY date DESC""",
         (cutoff,),
     ).fetchall()
@@ -16186,9 +16193,12 @@ def _query_trends_db(conn, days):
                 session_priced_tokens = model_tokens
             else:
                 session_unpriced_tokens = model_tokens
-        session_cost = _cost_from_model_breakdown(mb, tier=pricing_tier,
-                                                   cache_create_1h=cache_create_1h if cache_create_1h or cache_create_5m else None,
-                                                   cache_create_5m=cache_create_5m if cache_create_1h or cache_create_5m else None)
+        stored_cost = float(sr["cost_usd"] or 0.0)
+        session_cost = stored_cost
+        if session_cost == 0.0:
+            session_cost = _cost_from_model_breakdown(mb, tier=pricing_tier,
+                                                       cache_create_1h=cache_create_1h if cache_create_1h or cache_create_5m else None,
+                                                       cache_create_5m=cache_create_5m if cache_create_1h or cache_create_5m else None)
         if session_cost == 0.0:
             # Use the stored 1h/5m split when available; fall back to 5m-only rate otherwise.
             if cache_create_1h or cache_create_5m:
@@ -16196,6 +16206,9 @@ def _query_trends_db(conn, days):
                                                tier=pricing_tier, cache_create_1h=cache_create_1h, cache_create_5m=cache_create_5m)
             else:
                 session_cost = _get_model_cost(dom_model, uncached_est, out_total, cache_read_est, cache_create_total, tier=pricing_tier)
+        if stored_cost > 0.0:
+            session_priced_tokens = inp_total + out_total
+            session_unpriced_tokens = 0
         if session_cost == 0.0 and session_priced_tokens == 0 and session_unpriced_tokens == 0 and (inp_total or out_total):
             session_unpriced_tokens = inp_total + out_total
         total_cost_usd += session_cost
@@ -16227,6 +16240,7 @@ def _query_trends_db(conn, days):
             "cost_usd": round(session_cost, 4),
             "cost_priced_tokens": session_priced_tokens,
             "cost_unpriced_tokens": session_unpriced_tokens,
+            "cost_source": sr["cost_source"] or ("stored" if stored_cost > 0.0 else ("pricing" if session_cost else None)),
             "model": _normalize_model_name(dom_model) or dom_model,
             "model_count": len(mu) if mu else 1,
         }
@@ -16469,13 +16483,16 @@ def _collect_trends_from_jsonl(days=30):
         uncached = max(0, s["total_input_tokens"] - cr - cc)
         cc_1h = s.get("total_cache_create_1h", 0) or 0
         cc_5m = s.get("total_cache_create_5m", 0) or 0
-        if cc_1h or cc_5m:
+        stored_cost = float(s.get("total_cost_usd", 0.0) or 0.0)
+        if stored_cost > 0.0:
+            session_cost = stored_cost
+        elif cc_1h or cc_5m:
             session_cost = _get_model_cost(dom_model, uncached, s["total_output_tokens"], cr, cc,
                                            tier=pricing_tier, cache_create_1h=cc_1h, cache_create_5m=cc_5m)
         else:
             session_cost = _get_model_cost(dom_model, uncached, s["total_output_tokens"], cr, cc, tier=pricing_tier)
         session_tokens_for_cost = s["total_input_tokens"] + s["total_output_tokens"]
-        if _is_priced_model(dom_model, tier=pricing_tier):
+        if stored_cost > 0.0 or _is_priced_model(dom_model, tier=pricing_tier):
             session_priced_tokens = session_tokens_for_cost
             session_unpriced_tokens = 0
         else:
@@ -16512,6 +16529,7 @@ def _collect_trends_from_jsonl(days=30):
             "cost_usd": round(session_cost, 4),
             "cost_priced_tokens": session_priced_tokens,
             "cost_unpriced_tokens": session_unpriced_tokens,
+            "cost_source": "pi_session" if stored_cost > 0.0 else ("pricing" if session_cost else None),
             "model": _normalize_model_name(dom_model) or dom_model,
         }
         sq = score_session_quality(sd)

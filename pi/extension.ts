@@ -83,7 +83,9 @@ export default function tokenOptimizerPi(pi: ExtensionAPI) {
         async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) {
           const cwd = String(ctx?.cwd ?? process.cwd());
           const cwdReadTool = createReadToolDefinition(cwd);
-          const abs = resolve(cwd, String(params.path));
+          const requestedPath = String(params.path);
+          const normalizedPath = requestedPath.startsWith("@") ? requestedPath.slice(1) : requestedPath;
+          const abs = resolve(cwd, normalizedPath);
           const pre = await bridgeCall("read-before", { path: abs, cwd: ctx?.cwd, offset: params.offset ?? 0, limit: params.limit ?? 0 }, HOT).catch(() => undefined);
           if (pre?.action === "replace" && typeof pre.content === "string") return { content: [{ type: "text", text: pre.content }], details: { tokenOptimizer: pre } } as any;
           const result = await cwdReadTool.execute(id, params, signal, onUpdate, ctx);
